@@ -109,7 +109,19 @@ order:  100           901                950               20000
 
 文本、`interpolate` 标志都原样传递，插件不重写别人的段。
 
-## 5. 一条请求最后长什么样
+## 5. 文本流水线（vendored 文件 → 真正发出去的正文）
+
+`lib/transform.js` 是纯文本层，顺序固定：
+
+1. `stripDynamicTail`：去掉 CC 每次请求都追加的 `<total_tokens>…</total_tokens>`；
+2. `dropHeadingSections`：按 H1 标题整段丢（默认 `memory`，整词匹配，`# Memory` 和 `# auto memory` 都命中）；
+3. `mapToolNames`：单遍替换工具名（`Read` → `read`、`PowerShell` → `pwsh`、`Agent` → `subagent`…），一遍扫完，替换产物不会被二次替换；
+4. `applyRewrites`：整句改写（`subagent_type: "fork"`、`/help`、`claude.ai/code`、`/fast`、Claude 5 模型名），再压空行、去首尾空行；
+5. `composePrompt`：身份行 + 正文拼成最终文本。
+
+顺序有意义：改写在改名之后，规则才写得成"名字修好之后这句话还能读"；`rewrites: false` 时第 4 步整段跳过，连空行清理都不做。
+
+## 6. 一条请求最后长什么样
 
 ```
 system:
@@ -127,8 +139,9 @@ user:
   …
 ```
 
-## 6. 怎么自己验证
+## 7. 怎么自己验证
 
-- `node --test`：25 个测试，含假服务上的瀑布语义。
-- 真机：`- id: claudecode-prompt config: { debug: true }` → 每次装配打印段数变化与段名。
+- `node --test`：43 个测试（文本层、装配层、两份抄来的数据的防腐），含假服务上的瀑布语义。
+- `npm run verify`：真 boot —— 一次性 profile + junction + 一句 headless prompt，断言 `sections N -> 2 [claudecode:identity, claudecode:prompt]`。单元测试喂的是假服务，这一步才能证明真装配里确实换了。
+- 真机：`- id: claudecode-prompt config: { debug: true }` → 每次装配打印段数变化、段名与各段 order。
 - 想拿到运行时真实装配文本：目前 DSH 的 inspect provider 只有 `Service/Event/Config/Tool`（host）与 `Builtin/Slots/Theme`（client），没有 prompt 查看器；要么开 `debug`，要么临时挂一个记录装配体的探针插件。

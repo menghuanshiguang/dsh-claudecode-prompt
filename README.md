@@ -86,12 +86,12 @@ bundle 列表变化需要重启（只改配置的话 patch 会热载）。
 一条真实 DSH 启动（`dsh --profile headless`，插件首次装配）的输出：
 
 ```
-[dsh-claudecode-prompt] active — variant=cli source=…\node_modules\dsh-claudecode-prompt\prompt\claude-code-cli.md chars=14207 identity=on tools=dsh dropped=[memory] keep=[]
+[dsh-claudecode-prompt] active — variant=cli source=…\node_modules\dsh-claudecode-prompt\prompt\claude-code-cli.md chars=13557 identity=on tools=dsh rewrites=7 dropped=[memory] keep=[]
 [dsh-claudecode-prompt] sections 16 -> 2 [claudecode:identity, claudecode:prompt]
 PROBE-OK
 ```
 
-16 段 DSH 提示词被换成 2 段，模型随后正常回了话。`chars=14207` 是清洗后的正文长度：27,036 的原始正文减去 memory 段、动态尾和改名带来的字符差。
+16 段 DSH 提示词被换成 2 段，模型随后正常回了话。`chars=13557` 是清洗后的正文长度：27,036 的原始正文减去 memory 段、动态尾、改名，再减去 `rewrites=7` 删掉的那几句指向不存在工具的话。
 
 装了 `dsh-sunder` 并保留它三段的真机启动（第二次探针，`guard: false` + `keepSections`）：
 
@@ -120,6 +120,7 @@ PROBE-OK
 | `dropSections` | `[memory]` | 按 H1 标题丢弃整段（整词匹配，`memory` 同时命中 `# Memory` 和 `# auto memory`） |
 | `toolNames` | `dsh` | `dsh` = 把提示词里的 Claude Code 工具名换成 Harness 名字；`verbatim` = 原样 |
 | `toolNameMap` | `{}` | 追加/覆盖映射，如 `{ Agent: subagent_fork }` |
+| `rewrites` | 7 条默认规则 | 改名之后整句改写。`false` = 一句不改；给数组 = **替换**默认规则，不是追加 |
 | `keepSections` | `[]` | 要保留的其它插件的段名，例如 `[astra:identity-head, astra:identity]` |
 | `sectionPrefix` | `claudecode` | 段名 = `<prefix>:identity` / `<prefix>:prompt` |
 | `identityOrder` | `100` | 身份段的排序位 |
@@ -144,8 +145,26 @@ PROBE-OK
 - id: claudecode-prompt
   config:
     toolNames: verbatim
+    rewrites: false         # 连句子也别改，逐字用 CC 原文
     dropSections: []        # 连 memory 段也保留
 ```
+
+### 为什么要改写句子
+
+改名只换了词，句子还在讲这里没有的东西：`Calling Agent with subagent_type: "fork"`、`invoke it via Skill`、`Get help with using Claude Code`、`report the issue at https://github.com/anthropics/claude-code/issues`、`claude.ai/code` 上的 web app、`/fast`、以及 Claude 5 系列模型名。模型读到这些会去试着调不存在的东西，所以 `rewrites` 在改名之后整句处理，默认 7 条：
+
+```yaml
+- id: claudecode-prompt
+  config:
+    rewrites:
+      - pattern: '^  - /help: Get help with using Claude Code\r?\n'
+        replace: ''
+      - pattern: 'Better to run it via (?:the )?Skill'
+        replace: 'better to run it via the skill tool'
+        flags: gi           # 可省，默认 g
+```
+
+`pattern` 是 JS 正则源码，`replace` 支持 `$1`。**给数组是替换默认规则**：一套规则只对付一个 CC 版本，悄悄追加会让人无法从配置回答"这句是谁删的"。规则在装配时按顺序跑，跑完把 3 个以上连续空行压成 2 个、去掉首尾空行；`rewrites: false` 时连这个清理也不做——说不动就不动。正则全部在配置归一化时预编译，写错了 boot 时就报 `invalid rewrite pattern …` 并带上出错的那条 `pattern`。
 
 ---
 
@@ -185,6 +204,7 @@ VSCode 那次额外抓到一条 `role: "system"` 的 10,036 字符消息（`# En
 - **运行时上下文仍在**：`Current runtime context`（工作目录 / 沙箱 / 审批）由 Harness 作为最后一条 user 消息发给模型，不属于 `systemPrompt.sections`，本插件不碰。
 - **sunder 的每轮 rule card** 也是 user 消息，不在系统提示词里，照旧生效。
 - **提示词缓存**：装上的那一刻系统前缀变了，缓存重建一次；之后稳定。
+- **坏配置不炸 boot**：`variant` 写错、`promptPath` 不存在、`rewrites` 里的正则写坏，都只打两行错（`disabled — …` + `the harness will use its own prompt`），注册 0 个监听，DSH 用自己的提示词继续跑。装配时（瀑布里）抛的错照旧往外抛：半改写的提示词比不替换更糟。
 - **别的插件注册 `complete: true` 段**会整段覆盖回来（装配瀑布里 complete 段最终成为唯一段）。同理，谁最后注册谁赢——所以顺序那件事是真的。
 
 卸载 = 从 `bundles` 里删掉本包，`guard: false` 也可以还原。没有残留配置。
@@ -194,12 +214,15 @@ VSCode 那次额外抓到一条 `role: "system"` 的 10,036 字符消息（`# En
 ## 开发
 
 ```bash
-node --test            # 25 个测试
+node --test            # 43 个测试
+npm run verify         # 起一个一次性 profile，真 boot 一次，断言替换生效
 node --test 2>&1 | tail
 ```
 
 - `test/transform.test.mjs`：纯文本层（动态尾、整词丢段、单遍改名、组合、配置归一化），并断言产出的提示词确实干净（无 token 尾、无 memory 段、无抓取机路径、无 Claude Code 工具名）。
-- `test/assemble.test.mjs`：对着假 `systemPrompt` 服务跑真的 `apply()`，模拟瀑布语义（`prepend` 后注册者最外层），验证：替换生效、contexts/tools/variables 原样、`keepSections` 按 order 排位、`interpolate:false`、以及守卫先/后注册各是什么结果。
+- `test/assemble.test.mjs`：对着假 `systemPrompt` 服务跑真的 `apply()`，模拟瀑布语义（`prepend` 后注册者最外层），验证：替换生效、contexts/tools/variables 原样、`keepSections` 按 order 排位、`interpolate:false`、以及守卫先/后注册各是什么结果；另外覆盖坏配置不炸 boot（`variant` 写错、`promptPath` 不存在）——日志两行、注册 0 个监听、DSH 用回自己的提示词。
+- `test/drift.test.mjs`：两份"别人的数据"的防腐检查。`prompt/*.md` 用 `prompt/VERSION.json` 的 sha256/字节数/行数钉住，改一个字就报 `prompt files changed; refresh prompt/VERSION.json`；`KNOWN_SECTION_ORDERS` 是 `SECTION_ORDERS` 的手抄本，测试直接从 `app.asar` 里读出真包（纯 Node 的 `readFileSync` 打不开 asar，头部 pickle 由 `readAsarEntry` 手解），按命名约定对完 32 个常量，order 一动就报 `section orders moved … update KNOWN_SECTION_ORDERS in index.js`。
+- `npm run verify`：单元测试喂的是假服务，只有真 boot 才能证明插件在真装配里生效。它建一个 pid 唯一的临时 profile（**不碰 `desktop`**），junction 进仓库，跑一句 headless prompt，断言 `active —` 行和 `sections N -> 2 [claudecode:identity, claudecode:prompt]` 行；`dsh` 不在 PATH 上时打印 SKIP 并退出 0，断言本身用假 `dsh` 反证过（不会空过）。
 
 目录：
 
@@ -210,6 +233,8 @@ lib/config.js        配置归一化 + 提示词文件解析
 prompt/*.md          逐字 vendored 的 CC 提示词
 cordis.patch.yml     bundle 层：只挂一行
 tools/capture_cc_prompt.py  抓取脚本（复现用）
+tools/verify.mjs     真机 boot 验证（npm run verify）
+prompt/VERSION.json  提示词指纹（sha256/字节数/行数 + 来源版本）
 docs/ARCHITECTURE.md 装配流水线、守卫、为什么不用 complete 段
 ```
 
