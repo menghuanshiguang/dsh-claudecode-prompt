@@ -22,6 +22,10 @@
     "type": "git",
     "url": "git+https://github.com/menghuanshiguang/dsh-claudecode-prompt.git"
   },
+  "homepage": "https://github.com/menghuanshiguang/dsh-claudecode-prompt#readme",
+  "bugs": {
+    "url": "https://github.com/menghuanshiguang/dsh-claudecode-prompt/issues"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
