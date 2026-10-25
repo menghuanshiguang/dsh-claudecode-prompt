@@ -129,15 +129,43 @@ test('keepSections preserves foreign sections at their registry order', async ()
   assert.equal(result.sections[3].text, 'core')
 })
 
-test('kept sections with no registry order fall before the prompt', async () => {
+test('kept sections with no resolvable order and no resolvable neighbour fall before the prompt', async () => {
+  // Nothing around them in the assembly has a known order either, so there is
+  // nothing to interpolate from; "in front" is the conservative default.
   const { assemble } = createHarness({
-    sections: [...DSH_SECTIONS, { name: 'custom:thing', text: 'custom' }],
-    config: { keepSections: ['custom:thing'] },
+    sections: [
+      { name: 'custom:first', text: 'first' },
+      { name: 'custom:second', text: 'second' },
+    ],
+    config: { keepSections: ['custom:first', 'custom:second'] },
   })
 
   assert.deepEqual(
     (await assemble()).sections.map((section) => section.name),
-    ['custom:thing', 'claudecode:identity', 'claudecode:prompt'],
+    ['custom:first', 'custom:second', 'claudecode:identity', 'claudecode:prompt'],
+  )
+})
+
+test('the static order table places kept sections even when the registry answers nothing', async () => {
+  // Live boot: getSectionOrder() returned nothing for every section, DSH's own
+  // included. The table (SECTION_ORDERS of dsh-system-prompt 0.2.1-rc.3) is what
+  // keeps sunder's rules/footer behind Claude Code's instructions instead of
+  // ahead of them.
+  const { assemble } = createHarness({
+    sections: [
+      { name: 'sunder:identity', text: 'sunder identity' },
+      { name: 'deployment:persona-prefix', text: 'persona prefix' },
+      { name: 'tool:read', text: 'read tool' },
+      { name: 'sunder:rules', text: 'sunder rules' },
+      { name: 'deployment:persona-suffix', text: 'persona suffix' },
+      { name: 'sunder:footer', text: 'sunder footer' },
+    ],
+    config: { keepSections: ['sunder:identity', 'sunder:rules', 'sunder:footer'] },
+  })
+
+  assert.deepEqual(
+    (await assemble()).sections.map((section) => section.name),
+    ['sunder:identity', 'claudecode:identity', 'claudecode:prompt', 'sunder:rules', 'sunder:footer'],
   )
 })
 

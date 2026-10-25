@@ -93,6 +93,16 @@ PROBE-OK
 
 16 段 DSH 提示词被换成 2 段，模型随后正常回了话。`chars=14207` 是清洗后的正文长度：27,036 的原始正文减去 memory 段、动态尾和改名带来的字符差。
 
+装了 `dsh-sunder` 并保留它三段的真机启动（第二次探针，`guard: false` + `keepSections`）：
+
+```
+[dsh-sunder] v1.6.1 active — … guard=off
+[dsh-claudecode-prompt] active — variant=cli … keep=[sunder:identity, sunder:rules, sunder:footer]
+[dsh-claudecode-prompt] sections 19 -> 5 [sunder:identity, claudecode:identity, claudecode:prompt, sunder:rules, sunder:footer]
+```
+
+`debug: true` 还会再打一行 `orders …`（每段的 order，查不到的显示 `null`），排位不对时先看它。
+
 ---
 
 ## 配置
@@ -114,7 +124,7 @@ PROBE-OK
 | `sectionPrefix` | `claudecode` | 段名 = `<prefix>:identity` / `<prefix>:prompt` |
 | `identityOrder` | `100` | 身份段的排序位 |
 | `promptOrder` | `950` | 正文段的排序位（DSH 的 `tool:*` 段在 1000+） |
-| `debug` | `false` | 每次装配打印段列表 |
+| `debug` | `false` | 每次装配打印段列表 + 各段 order |
 
 ### 例子：保留另一个插件的身份锚点
 
@@ -126,7 +136,7 @@ PROBE-OK
     keepSections: ["astra:identity-head", "astra:identity"]
 ```
 
-保留段按注册表里的 order 重新排位：`astra:identity-head`（901）落在正文之前，`astra:identity`（20000）落在正文之后（recency 位置）。注册表查不到 order 的段（实测 `sunder:*` 就查不到）取它在原始装配里的邻居——装配数组本身已按 order 排好，于是向下取上一个已知 order 或向上取下一个，落在两者之间；两头都没有邻居才放在正文之前。
+保留段按 order 重新排位：`astra:identity-head`（901）落在正文之前，`astra:identity`（20000）落在正文之后（recency 位置）。order 优先问注册表 `getSectionOrder()`，但真机实测从插件作用域里它对**所有**段都返回空（连 DSH 自己的 `tool:read` 也是），所以实际以包内置的 order 表兜底（照抄 `dsh-system-prompt` 的 `SECTION_ORDERS`），表里没有的段取它在原始装配里的邻居——装配数组本身已按 order 排好，落在上一个已知 order 与下一个之间；两头都没有邻居才放正文之前。
 
 ### 例子：完全不动提示词的工具名
 

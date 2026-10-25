@@ -43,6 +43,51 @@ const TAG = '[dsh-claudecode-prompt]'
 const FOREIGN_SECTION_PREFIXES = ['sunder:']
 
 /**
+ * Order table used when the registry cannot answer.
+ *
+ * Measured on a live boot: `ctx.systemPrompt.getSectionOrder()` returned nothing
+ * for *every* section — including DSH's own (`plan:policy`, `tool:read`, …) — so it
+ * cannot be trusted here. These numbers are the `SECTION_ORDERS` constants of
+ * `@deepseek-ai/dsh-system-prompt` 0.2.1-rc.3, keyed by the section names that
+ * package registers. Sections missing from this table still get placed by
+ * neighbour interpolation in `rewriteAssembly`.
+ */
+const KNOWN_SECTION_ORDERS = {
+  'harness:identity': -1000,
+  'deployment:persona-prefix': 0,
+  'plan:policy': 500,
+  'team:policy': 600,
+  'ptc:only': 800,
+  'file:reference': 900,
+  'tool:bash': 1000,
+  'tool:pwsh': 1010,
+  'tool:read': 1100,
+  'tool:write': 1200,
+  'tool:edit': 1300,
+  'tool:glob': 1400,
+  'tool:grep': 1500,
+  'tool:jobs': 1600,
+  'tool:pty': 1700,
+  'tool:web_search': 2000,
+  'tool:web_fetch': 2100,
+  'tool:lsp': 2200,
+  'tool:session_query': 2300,
+  'tool:goal': 2400,
+  'tool:workflow': 2600,
+  'tool:ralph': 2700,
+  'tool:subagent': 2800,
+  'tool:report': 2900,
+  'tool:computer_use': 3000,
+  'mcp:servers': 3100,
+  'tools:sdk': 5000,
+  'deliverable:file-references': 9000,
+  'structured:output': 9900,
+  'harness:source': 10000,
+  'web:surface': 10100,
+  'deployment:persona-suffix': 10200,
+}
+
+/**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {Record<string, unknown>} [rawConfig]
  */
@@ -67,7 +112,11 @@ export function apply(ctx, rawConfig = {}) {
   })
   const identityText = config.identity.trim()
 
-  /** Section order lookup, memoized; `null` when the registry has no such name. */
+  /**
+   * Section order lookup, memoized. The live registry answers nothing from this
+   * scope, so the static table is the real source and `null` means "let the caller
+   * interpolate from the neighbours".
+   */
   const orderCache = new Map()
   const orderOf = (sectionName) => {
     if (orderCache.has(sectionName)) return orderCache.get(sectionName)
@@ -76,7 +125,10 @@ export function apply(ctx, rawConfig = {}) {
       const resolved = ctx.systemPrompt.getSectionOrder(sectionName)
       if (Number.isFinite(resolved)) order = resolved
     } catch {
-      /* unknown section name — fall through to the positional fallback */
+      /* registry lookup unavailable in this scope — use the table below */
+    }
+    if (order === null && Object.hasOwn(KNOWN_SECTION_ORDERS, sectionName)) {
+      order = KNOWN_SECTION_ORDERS[sectionName]
     }
     orderCache.set(sectionName, order)
     return order
@@ -106,6 +158,11 @@ export function apply(ctx, rawConfig = {}) {
         console.info(
           `${TAG} sections ${assembly.sections.length} -> ${rewritten.sections.length}` +
             ` [${rewritten.sections.map((section) => section.name).join(', ')}]`,
+        )
+        console.info(
+          `${TAG} orders ${assembly.sections
+            .map((section) => `${section.name}=${orderOf(section.name)}`)
+            .join(' ')}`,
         )
       }
 

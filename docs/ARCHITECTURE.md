@@ -97,11 +97,12 @@ order:  100           901                950               20000
         claudecode:   astra:identity     claudecode:       astra:identity
         identity      -head              prompt            (core)
 
-注册表查不到 order 的保留段取原始装配里的邻居：数组已按 order 排好序，正查不到就向上取下一个、反查不到就向下取上一个，落在两者之间（邻居都没有才放正文之前）。
-这条不是理论：真机首跑时 `getSectionOrder('sunder:rules')` 从本插件作用域里返回不了值，
-所有保留段一起塌到占位 order，sunder 的 rules/footer 就排到了 Claude Code 正文前面。
-现在按邻居插值，`sunder:identity` 落在正文前、`sunder:rules`/`sunder:footer` 落在正文后。
-`test/assemble.test.mjs` 有这条回归用例（"borrow their neighbours"）。
+注册表查不到 order 的保留段走两级兜底：先查内置表 `KNOWN_SECTION_ORDERS`（照抄 `@deepseek-ai/dsh-system-prompt` 0.2.1-rc.3 的 `SECTION_ORDERS`，键是包自己注册的段名），再查不到就取原始装配里的邻居——数组已按 order 排好序，向上取下一个已知 order、向下取上一个，落在两者之间；两头都没有邻居才放正文之前。
+
+这条不是理论：真机首跑时 `getSectionOrder()` 对本插件作用域返回不了**任何**段的 order（连 DSH 自己的 `plan:policy`、`tool:read` 都是 null，debug 日志里 `orders …=null` 一长串），所有保留段一起塌到占位 order，sunder 的 rules/footer 就排到了 Claude Code 正文前面。现在内置表 + 邻居插值，`sunder:identity` 落在正文前、`sunder:rules`/`sunder:footer` 落在正文后，真机 debug 日志：
+`sections 19 -> 5 [sunder:identity, claudecode:identity, claudecode:prompt, sunder:rules, sunder:footer]`。
+
+`test/assemble.test.mjs` 有两条回归用例（"borrow their neighbours"、"static order table"），断言的就是这两个场景。
 ```
 
 文本、`interpolate` 标志都原样传递，插件不重写别人的段。
