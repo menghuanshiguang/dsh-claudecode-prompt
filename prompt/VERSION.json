@@ -1,0 +1,16 @@
+{
+  "claudeCodeVersion": "2.1.310",
+  "source": "vscode extension anthropic.claude-code-2.1.310, captured from the real binary via tools/capture_cc_prompt.py",
+  "files": {
+    "prompt/claude-code-cli.md": {
+      "sha256": "c4bf8466f32a50b08672089305ce1fb13e57b7ef8d3b391aa9a2ec4423cf3f33",
+      "bytes": 27332,
+      "lines": 217
+    },
+    "prompt/claude-code-vscode.md": {
+      "sha256": "d01accc8845048ea27712e185328df5e52c08e8db67cb273ee58c18f9016a593",
+      "bytes": 5741,
+      "lines": 55
+    }
+  }
+}
