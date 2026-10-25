@@ -67,7 +67,7 @@ sunder 其它功能（工具、每轮 rule card、公告）不受影响，只是
 
 bundle 列表变化需要重启（只改配置的话 patch 会热载）。
 
-验证：在探针里看一眼实际装配结果，或把 `debug` 打开：
+验证：把 `debug` 打开，看装配时的日志。
 
 ```yaml
 - id: claudecode-prompt
@@ -75,12 +75,15 @@ bundle 列表变化需要重启（只改配置的话 patch 会热载）。
     debug: true
 ```
 
-日志里会出现：
+一条真实 DSH 启动（`dsh --profile headless`，插件首次装配）的输出：
 
 ```
-[dsh-claudecode-prompt] active — variant=cli source=…/prompt/claude-code-cli.md chars=14271 identity=on tools=dsh dropped=[memory] keep=[]
-[dsh-claudecode-prompt] sections 14 -> 2 [claudecode:identity, claudecode:prompt]
+[dsh-claudecode-prompt] active — variant=cli source=…\node_modules\dsh-claudecode-prompt\prompt\claude-code-cli.md chars=14207 identity=on tools=dsh dropped=[memory] keep=[]
+[dsh-claudecode-prompt] sections 16 -> 2 [claudecode:identity, claudecode:prompt]
+PROBE-OK
 ```
+
+16 段 DSH 提示词被换成 2 段，模型随后正常回了话。`chars=14207` 是清洗后的正文长度：27,036 的原始正文减去 memory 段、动态尾和改名带来的字符差。
 
 ---
 
