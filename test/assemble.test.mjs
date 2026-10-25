@@ -193,6 +193,25 @@ test('kept sections with an unresolvable order borrow their neighbours (the live
   )
 })
 
+test('a section interpolated onto promptOrder is clamped to its previous neighbour side', async () => {
+  // astra:identity-head lives between file:reference (900) and tool:bash (1000),
+  // so it interpolates to exactly 950 — the promptOrder. A tie would let the
+  // identity anchor drift behind the Claude Code body; the previous side wins.
+  const { assemble } = createHarness({
+    sections: [
+      { name: 'file:reference', text: 'file refs' },
+      { name: 'astra:identity-head', text: 'identity head' },
+      { name: 'tool:bash', text: 'bash tool' },
+    ],
+    config: { keepSections: ['astra:identity-head'] },
+  })
+
+  assert.deepEqual(
+    (await assemble()).sections.map((section) => section.name),
+    ['claudecode:identity', 'astra:identity-head', 'claudecode:prompt'],
+  )
+})
+
 test('includeIdentity:false and no keepSections collapses to a single section', async () => {
   const { assemble } = createHarness({ sections: DSH_SECTIONS, config: { includeIdentity: false } })
 

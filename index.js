@@ -223,7 +223,18 @@ function rewriteAssembly(assembly, options) {
     section && typeof section.name === 'string' ? orderOf(section.name) : null,
   )
 
-  /** @param {number} index */
+  /**
+   * Order of a kept section, in three steps: the table/registry answers, the
+   * neighbours answer, or nothing does.
+   *
+   * The neighbour step also anchors the *side* of our prompt: an interpolated
+   * order can land exactly on `promptOrder` (astra's identity-head sits between
+   * `file:reference` 900 and `tool:bash` 1000, i.e. right at 950), and a tie would
+   * let the section drift behind the Claude Code body. Whichever side the
+   * previous known neighbour is on wins.
+   *
+   * @param {number} index
+   */
   const orderAt = (index) => {
     const known = resolvedOrders[index]
     if (known !== null) return known
@@ -244,7 +255,10 @@ function rewriteAssembly(assembly, options) {
     if (previous === null && next === null) return Number.NEGATIVE_INFINITY
     if (previous === null) return next - 0.5
     if (next === null) return previous + 0.5
-    return previous === next ? previous : (previous + next) / 2
+    const middle = previous === next ? previous : (previous + next) / 2
+    if (previous < config.promptOrder && middle >= config.promptOrder) return config.promptOrder - 0.5
+    if (previous >= config.promptOrder && middle <= config.promptOrder) return config.promptOrder + 0.5
+    return middle
   }
 
   /** @type {{ name: string, text: string, interpolate?: boolean, order: number }[]} */

@@ -103,6 +103,8 @@ order:  100           901                950               20000
 `sections 19 -> 5 [sunder:identity, claudecode:identity, claudecode:prompt, sunder:rules, sunder:footer]`。
 
 `test/assemble.test.mjs` 有两条回归用例（"borrow their neighbours"、"static order table"），断言的就是这两个场景。
+
+插值还有一个坑：`astra:identity-head` 落在 `file:reference`（900）与 `tool:bash`（1000）之间，插值出来正好 950 = `promptOrder`，平票会让身份锚点漂到正文后面。所以插值结果如果越过/压线 `promptOrder`，按**上一个已知邻居所在的那一侧**夹取（用例 "clamped to its previous neighbour side"）。
 ```
 
 文本、`interpolate` 标志都原样传递，插件不重写别人的段。
