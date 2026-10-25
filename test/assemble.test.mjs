@@ -141,6 +141,30 @@ test('kept sections with no registry order fall before the prompt', async () => 
   )
 })
 
+test('kept sections with an unresolvable order borrow their neighbours (the live sunder case)', async () => {
+  // Seen in a real boot: the registry resolved neither sunder:identity nor
+  // sunder:rules/footer from inside this plugin, so every kept section collapsed to
+  // the same placeholder order and sunder's "rules" text landed *in front of*
+  // Claude Code's instructions. The incoming list is already sorted, so neighbours
+  // that do resolve can place the rest.
+  const { assemble } = createHarness({
+    sections: [
+      { name: 'sunder:identity', text: 'sunder identity' },
+      { name: 'harness:identity', text: 'You are an AI agent powered by DeepSeek Harness.' },
+      { name: 'tool:bash', text: 'bash tool' },
+      { name: 'sunder:rules', text: 'sunder rules' },
+      { name: 'sunder:footer', text: 'sunder footer' },
+    ],
+    orders: { 'harness:identity': -1000, 'tool:bash': 1000 },
+    config: { keepSections: ['sunder:identity', 'sunder:rules', 'sunder:footer'] },
+  })
+
+  assert.deepEqual(
+    (await assemble()).sections.map((section) => section.name),
+    ['sunder:identity', 'claudecode:identity', 'claudecode:prompt', 'sunder:rules', 'sunder:footer'],
+  )
+})
+
 test('includeIdentity:false and no keepSections collapses to a single section', async () => {
   const { assemble } = createHarness({ sections: DSH_SECTIONS, config: { includeIdentity: false } })
 

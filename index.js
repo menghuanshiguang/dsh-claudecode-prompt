@@ -109,14 +109,19 @@ export function apply(ctx, rawConfig = {}) {
         )
       }
 
-      if (!reportedForeign && assembly.sections.some(isForeignSection)) {
-        reportedForeign = true
-        console.warn(
-          `${TAG} dropped sections contributed by another prompt plugin ` +
-            `(${assembly.sections.filter(isForeignSection).map((section) => section.name).join(', ')}). ` +
-            'If they come back, that plugin has an outer assembly guard: set `guard: false` ' +
-            'on its row, and make sure this bundle is listed after it in dsh.profile.bundles.',
+      if (!reportedForeign) {
+        const droppedForeign = assembly.sections.filter(
+          (section) => isForeignSection(section) && !config.keepSections.includes(section.name),
         )
+        if (droppedForeign.length > 0) {
+          reportedForeign = true
+          console.warn(
+            `${TAG} dropped sections contributed by another prompt plugin ` +
+              `(${droppedForeign.map((section) => section.name).join(', ')}). ` +
+              'If they come back, that plugin has an outer assembly guard: set `guard: false` ' +
+              'on its row, and make sure this bundle is listed after it in dsh.profile.bundles.',
+          )
+        }
       }
 
       return rewritten
@@ -146,22 +151,58 @@ function rewriteAssembly(assembly, options) {
   const { config, promptText, identityText, identitySectionName, promptSectionName, orderOf } = options
 
   const keep = new Set(config.keepSections)
+  const sections = assembly.sections
+  /**
+   * Registry order per section; `null` where the registry cannot resolve the name.
+   *
+   * The registry is the primary source, but a section registered by another plugin
+   * does not always resolve from here — and an unresolvable order used to park the
+   * section in front of the entire prompt (which is how sunder's `rules` and
+   * `footer` sections ended up ahead of Claude Code's instructions in the first
+   * live boot). The incoming list is already sorted by order, so a section with no
+   * resolvable order can borrow one from its nearest resolvable neighbours.
+   */
+  const resolvedOrders = sections.map((section) =>
+    section && typeof section.name === 'string' ? orderOf(section.name) : null,
+  )
+
+  /** @param {number} index */
+  const orderAt = (index) => {
+    const known = resolvedOrders[index]
+    if (known !== null) return known
+    let previous = null
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (resolvedOrders[i] !== null) {
+        previous = resolvedOrders[i]
+        break
+      }
+    }
+    let next = null
+    for (let i = index + 1; i < sections.length; i += 1) {
+      if (resolvedOrders[i] !== null) {
+        next = resolvedOrders[i]
+        break
+      }
+    }
+    if (previous === null && next === null) return Number.NEGATIVE_INFINITY
+    if (previous === null) return next - 0.5
+    if (next === null) return previous + 0.5
+    return previous === next ? previous : (previous + next) / 2
+  }
+
   /** @type {{ name: string, text: string, interpolate?: boolean, order: number }[]} */
   const before = []
   /** @type {{ name: string, text: string, interpolate?: boolean, order: number }[]} */
   const after = []
 
-  for (const section of assembly.sections) {
+  for (let index = 0; index < sections.length; index += 1) {
+    const section = sections[index]
     if (!section || typeof section.name !== 'string' || !keep.has(section.name)) continue
-    const order = orderOf(section.name)
     const entry = {
       name: section.name,
       text: section.text,
       interpolate: section.interpolate,
-      // An unknown order has to land somewhere deterministic; before our prompt
-      // is the conservative choice (it cannot displace the tool instructions,
-      // which are gone anyway).
-      order: order === null ? Number.NEGATIVE_INFINITY : order,
+      order: orderAt(index),
     }
     if (entry.order < config.promptOrder) before.push(entry)
     else after.push(entry)

@@ -97,7 +97,11 @@ order:  100           901                950               20000
         claudecode:   astra:identity     claudecode:       astra:identity
         identity      -head              prompt            (core)
 
-查不到 order 的保留段 → 放在正文之前（宁可靠前，也不挤掉工具说明的位置）
+注册表查不到 order 的保留段取原始装配里的邻居：数组已按 order 排好序，正查不到就向上取下一个、反查不到就向下取上一个，落在两者之间（邻居都没有才放正文之前）。
+这条不是理论：真机首跑时 `getSectionOrder('sunder:rules')` 从本插件作用域里返回不了值，
+所有保留段一起塌到占位 order，sunder 的 rules/footer 就排到了 Claude Code 正文前面。
+现在按邻居插值，`sunder:identity` 落在正文前、`sunder:rules`/`sunder:footer` 落在正文后。
+`test/assemble.test.mjs` 有这条回归用例（"borrow their neighbours"）。
 ```
 
 文本、`interpolate` 标志都原样传递，插件不重写别人的段。

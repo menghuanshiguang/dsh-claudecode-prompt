@@ -63,6 +63,14 @@ sunder 其它功能（工具、每轮 rule card、公告）不受影响，只是
 
 > 如果你不装 sunder，这一步不需要。
 
+想留着 sunder 那三段（身份头、规则卡、页脚），把它们加进 `keepSections`，本插件会按原始顺序把它们插回去：`sunder:identity` 落在正文之前，`sunder:rules` / `sunder:footer` 落在正文之后。
+
+```yaml
+- id: claudecode-prompt
+  config:
+    keepSections: ["astra:identity-head", "astra:identity", "sunder:identity", "sunder:rules", "sunder:footer"]
+```
+
 ### 3. 重启 DSH
 
 bundle 列表变化需要重启（只改配置的话 patch 会热载）。
@@ -118,7 +126,7 @@ PROBE-OK
     keepSections: ["astra:identity-head", "astra:identity"]
 ```
 
-保留段按注册表里的 order 重新排位：`astra:identity-head`（901）落在正文之前，`astra:identity`（20000）落在正文之后（recency 位置）。order 查不到的段放在正文之前。
+保留段按注册表里的 order 重新排位：`astra:identity-head`（901）落在正文之前，`astra:identity`（20000）落在正文之后（recency 位置）。注册表查不到 order 的段（实测 `sunder:*` 就查不到）取它在原始装配里的邻居——装配数组本身已按 order 排好，于是向下取上一个已知 order 或向上取下一个，落在两者之间；两头都没有邻居才放在正文之前。
 
 ### 例子：完全不动提示词的工具名
 
