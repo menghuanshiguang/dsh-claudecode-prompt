@@ -1,0 +1,45 @@
+# dsh-claudecode-prompt — bundle layer.
+#
+# Mounting this bundle adds one host row. Nothing else is patched here on purpose:
+# every edit this plugin makes happens at runtime, inside the
+# `system-prompt/assemble` waterfall, so removing the bundle restores the stock
+# prompt with no leftover configuration.
+#
+# Two things about the surrounding profile do matter, and neither can be expressed
+# from inside a package that may be installed into a profile without them:
+#
+#   1. BUNDLE ORDER. The listener registers with `prepend: true`, so the plugin that
+#      registers *last* sits outermost and has the final say over the section list.
+#      List this bundle after any other prompt-shaping bundle (notably dsh-sunder).
+#
+#   2. FOREIGN ASSEMBLY GUARDS. dsh-sunder installs a guard that re-attaches its own
+#      sections whenever it sees a prompt it did not produce, and it wraps
+#      `assemble` itself — which no listener of ours can outrank. Turn the guard off
+#      while this bundle owns the prompt:
+#
+#          - id: sunder
+#            config:
+#              guard: false
+#
+#      Sunder keeps working (tools, rule card, announcements); only its prompt
+#      sections are given up.
+- insert:
+    - id: claudecode-prompt
+      name: dsh-claudecode-prompt
+      config:
+        variant: cli
+      # config:
+      #   enabled: true
+      #   variant: cli              # cli (27 kB, claude -p / SDK) | vscode (5.7 kB)
+      #   promptPath: null          # absolute or cwd-relative .md instead of a variant
+      #   identity: "You are a Claude agent, built on Anthropic's Claude Agent SDK."
+      #   includeIdentity: true
+      #   stripDynamicTail: true    # drop Claude Code's frozen <total_tokens> counter
+      #   dropSections: [memory]    # H1 sections with no Harness counterpart
+      #   toolNames: dsh            # dsh = rename to Harness tool names | verbatim
+      #   toolNameMap: {}           # extra/override pairs, e.g. { Agent: subagent_fork }
+      #   keepSections: []          # section names from other plugins to preserve
+      #   sectionPrefix: claudecode # section names become <prefix>:identity / <prefix>:prompt
+      #   identityOrder: 100        # primacy slot
+      #   promptOrder: 950          # body slot (before DSH's tool sections at 1000+)
+      #   debug: false              # log the section list on every assembly
