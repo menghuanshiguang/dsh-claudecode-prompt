@@ -55,10 +55,12 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   const { text: raw, source } = readPromptFile(config)
+  // The identity line is emitted as its own section (primacy slot) rather than
+  // being folded into the body, so `identityOrder` can place it independently and
+  // `includeIdentity: false` leaves a clean single-section prompt.
   const promptText = buildPromptText({
     raw,
-    identity: config.identity,
-    includeIdentity: config.includeIdentity,
+    includeIdentity: false,
     stripDynamicTail: config.stripDynamicTail,
     dropSections: config.dropSections,
     toolNames: config.toolNames,
