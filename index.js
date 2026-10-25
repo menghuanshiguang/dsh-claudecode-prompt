@@ -92,106 +92,124 @@ const KNOWN_SECTION_ORDERS = {
  * @param {Record<string, unknown>} [rawConfig]
  */
 export function apply(ctx, rawConfig = {}) {
-  const config = normalizeConfig(rawConfig)
+  // Load path only: a broken row must never throw out of the Cordis plugin loader
+  // and abort the harness boot. Assembly-time failures stay unsuppressed so the
+  // waterfall surfaces them.
+  try {
+    const config = normalizeConfig(rawConfig)
 
-  if (!config.enabled) {
-    console.info(`${TAG} disabled by config`)
-    return
-  }
-
-  const { text: raw, source } = readPromptFile(config)
-  // The identity line is emitted as its own section (primacy slot) rather than
-  // being folded into the body, so `identityOrder` can place it independently and
-  // `includeIdentity: false` leaves a clean single-section prompt.
-  const promptText = buildPromptText({
-    raw,
-    includeIdentity: false,
-    stripDynamicTail: config.stripDynamicTail,
-    dropSections: config.dropSections,
-    toolNames: config.toolNames,
-  })
-  const identityText = config.identity.trim()
-
-  /**
-   * Section order lookup, memoized. The live registry answers nothing from this
-   * scope, so the static table is the real source and `null` means "let the caller
-   * interpolate from the neighbours".
-   */
-  const orderCache = new Map()
-  const orderOf = (sectionName) => {
-    if (orderCache.has(sectionName)) return orderCache.get(sectionName)
-    let order = null
-    try {
-      const resolved = ctx.systemPrompt.getSectionOrder(sectionName)
-      if (Number.isFinite(resolved)) order = resolved
-    } catch {
-      /* registry lookup unavailable in this scope — use the table below */
+    if (!config.enabled) {
+      console.info(`${TAG} disabled by config`)
+      return
     }
-    if (order === null && Object.hasOwn(KNOWN_SECTION_ORDERS, sectionName)) {
-      order = KNOWN_SECTION_ORDERS[sectionName]
-    }
-    orderCache.set(sectionName, order)
-    return order
-  }
 
-  const identitySectionName = `${config.sectionPrefix}:identity`
-  const promptSectionName = `${config.sectionPrefix}:prompt`
-  let reportedForeign = false
+    const { text: raw, source } = readPromptFile(config)
+    // The identity line is emitted as its own section (primacy slot) rather than
+    // being folded into the body, so `identityOrder` can place it independently and
+    // `includeIdentity: false` leaves a clean single-section prompt.
+    const promptText = buildPromptText({
+      raw,
+      includeIdentity: false,
+      stripDynamicTail: config.stripDynamicTail,
+      dropSections: config.dropSections,
+      toolNames: config.toolNames,
+      rewrites: config.rewrites,
+    })
+    const identityText = config.identity.trim()
 
-  ctx.on(
-    'system-prompt/assemble',
-    async (...args) => {
-      const next = args[args.length - 1]
-      const assembly = typeof next === 'function' ? await next() : args[0]
-      if (!assembly || !Array.isArray(assembly.sections)) return assembly
-
-      const rewritten = rewriteAssembly(assembly, {
-        config,
-        promptText,
-        identityText,
-        identitySectionName,
-        promptSectionName,
-        orderOf,
-      })
-
-      if (config.debug) {
-        console.info(
-          `${TAG} sections ${assembly.sections.length} -> ${rewritten.sections.length}` +
-            ` [${rewritten.sections.map((section) => section.name).join(', ')}]`,
-        )
-        console.info(
-          `${TAG} orders ${assembly.sections
-            .map((section) => `${section.name}=${orderOf(section.name)}`)
-            .join(' ')}`,
-        )
+    /**
+     * Section order lookup, memoized. The live registry answers nothing from this
+     * scope, so the static table is the real source and `null` means "let the caller
+     * interpolate from the neighbours".
+     */
+    const orderCache = new Map()
+    const orderOf = (sectionName) => {
+      if (orderCache.has(sectionName)) return orderCache.get(sectionName)
+      let order = null
+      try {
+        const resolved = ctx.systemPrompt.getSectionOrder(sectionName)
+        if (Number.isFinite(resolved)) order = resolved
+      } catch {
+        /* registry lookup unavailable in this scope — use the table below */
       }
+      if (order === null && Object.hasOwn(KNOWN_SECTION_ORDERS, sectionName)) {
+        order = KNOWN_SECTION_ORDERS[sectionName]
+      }
+      orderCache.set(sectionName, order)
+      return order
+    }
 
-      if (!reportedForeign) {
-        const droppedForeign = assembly.sections.filter(
-          (section) => isForeignSection(section) && !config.keepSections.includes(section.name),
-        )
-        if (droppedForeign.length > 0) {
-          reportedForeign = true
-          console.warn(
-            `${TAG} dropped sections contributed by another prompt plugin ` +
-              `(${droppedForeign.map((section) => section.name).join(', ')}). ` +
-              'If they come back, that plugin has an outer assembly guard: set `guard: false` ' +
-              'on its row, and make sure this bundle is listed after it in dsh.profile.bundles.',
+    const identitySectionName = `${config.sectionPrefix}:identity`
+    const promptSectionName = `${config.sectionPrefix}:prompt`
+    let reportedForeign = false
+
+    ctx.on(
+      'system-prompt/assemble',
+      async (...args) => {
+        const next = args[args.length - 1]
+        const assembly = typeof next === 'function' ? await next() : args[0]
+        if (!assembly || !Array.isArray(assembly.sections)) return assembly
+
+        const rewritten = rewriteAssembly(assembly, {
+          config,
+          promptText,
+          identityText,
+          identitySectionName,
+          promptSectionName,
+          orderOf,
+        })
+
+        if (config.debug) {
+          console.info(
+            `${TAG} sections ${assembly.sections.length} -> ${rewritten.sections.length}` +
+              ` [${rewritten.sections.map((section) => section.name).join(', ')}]`,
+          )
+          console.info(
+            `${TAG} orders ${assembly.sections
+              .map((section) => `${section.name}=${orderOf(section.name)}`)
+              .join(' ')}`,
           )
         }
-      }
 
-      return rewritten
-    },
-    { global: true, prepend: true },
-  )
+        if (!reportedForeign) {
+          const droppedForeign = assembly.sections.filter(
+            (section) => isForeignSection(section) && !config.keepSections.includes(section.name),
+          )
+          if (droppedForeign.length > 0) {
+            reportedForeign = true
+            console.warn(
+              `${TAG} dropped sections contributed by another prompt plugin ` +
+                `(${droppedForeign.map((section) => section.name).join(', ')}). ` +
+                'If they come back, that plugin has an outer assembly guard: set `guard: false` ' +
+                'on its row, and make sure this bundle is listed after it in dsh.profile.bundles.',
+            )
+          }
+        }
 
-  console.info(
-    `${TAG} active — variant=${config.variant} source=${source} ` +
-      `chars=${promptText.length} identity=${config.includeIdentity ? 'on' : 'off'} ` +
-      `tools=${config.toolNamesMode} dropped=[${config.dropSections.join(', ')}] ` +
-      `keep=[${config.keepSections.join(', ')}]`,
-  )
+        return rewritten
+      },
+      { global: true, prepend: true },
+    )
+
+    console.info(
+      `${TAG} active — variant=${config.variant} source=${source} ` +
+        `chars=${promptText.length} identity=${config.includeIdentity ? 'on' : 'off'} ` +
+        `tools=${config.toolNamesMode} rewrites=${config.rewrites.length} ` +
+        `dropped=[${config.dropSections.join(', ')}] ` +
+        `keep=[${config.keepSections.join(', ')}]`,
+    )
+  } catch (error) {
+    // lib errors already carry the TAG; printing it twice reads like two plugins failed.
+    const reason = (error instanceof Error ? error.message : String(error)).replace(
+      `${TAG} `,
+      '',
+    )
+    console.error(`${TAG} disabled — ${reason}`)
+    console.error(
+      `${TAG} the harness will use its own prompt; check the plugin's config row and ` +
+        'that prompt/claude-code-*.md exist in the package',
+    )
+  }
 }
 
 /**

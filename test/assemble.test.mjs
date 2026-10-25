@@ -25,8 +25,18 @@ import { apply } from '../index.js'
  * @param {Record<string, number>} [options.orders]
  * @param {string[]} [options.keep]  Other sections to keep (test convenience).
  * @param {Record<string, unknown>} [options.config]  Plugin config overrides.
+ * @param {boolean} [options.autoApply]  Register the plugin immediately (default) or
+ *   leave registration to the test via `applyWith()`, so it can assert that a bad row
+ *   neither throws nor registers anything while `console` is stubbed.
  */
-function createHarness({ sections, orders = {}, config = {}, contexts = [], tools = [] }) {
+function createHarness({
+  sections,
+  orders = {},
+  config = {},
+  contexts = [],
+  tools = [],
+  autoApply = true,
+}) {
   /** @type {{ listener: Function, options: { prepend?: boolean } }[]} */
   const listeners = []
 
@@ -65,8 +75,32 @@ function createHarness({ sections, orders = {}, config = {}, contexts = [], tool
     listeners.push({ listener, options })
   }
 
-  apply(ctx, config)
-  return { assemble, addListener, listeners, base }
+  /** Run `apply()` against this harness's ctx with a config of the test's choosing. */
+  const applyWith = (pluginConfig = config) => apply(ctx, pluginConfig)
+
+  if (autoApply) applyWith()
+  return { applyWith, assemble, addListener, listeners, base }
+}
+
+/**
+ * Stub one `console` method for the duration of `fn` and return every line it saw.
+ *
+ * @param {'info' | 'error' | 'warn'} method
+ * @param {() => void} fn
+ * @returns {string[]}
+ */
+function captureConsole(method, fn) {
+  const original = console[method]
+  const lines = []
+  console[method] = (...args) => {
+    lines.push(args.map((arg) => String(arg)).join(' '))
+  }
+  try {
+    fn()
+  } finally {
+    console[method] = original
+  }
+  return lines
 }
 
 const DSH_SECTIONS = [
@@ -284,16 +318,58 @@ test('registered after such a guard, this plugin still has the last word', async
   )
 })
 
-test('enabled:false registers nothing', async () => {
-  const { assemble, listeners } = createHarness({ sections: DSH_SECTIONS, config: { enabled: false } })
+test('enabled:false registers nothing and logs the deliberate-disable line', async () => {
+  let harness
+  const lines = captureConsole('info', () => {
+    harness = createHarness({ sections: DSH_SECTIONS, config: { enabled: false } })
+  })
 
-  assert.equal(listeners.length, 0)
-  assert.deepEqual((await assemble()).sections.map((section) => section.name), [
+  assert.ok(lines.some((line) => line.includes('disabled by config')))
+  assert.equal(harness.listeners.length, 0)
+  assert.deepEqual((await harness.assemble()).sections.map((section) => section.name), [
     'sunder:identity',
     'harness:identity',
     'plan:policy',
     'tool:bash',
   ])
+})
+
+test('a valid config registers exactly one listener and still rewrites the prompt', async () => {
+  const { assemble, listeners } = createHarness({ sections: DSH_SECTIONS })
+
+  assert.equal(listeners.length, 1)
+  assert.deepEqual(listeners[0].options, { global: true, prepend: true })
+  assert.deepEqual(
+    (await assemble()).sections.map((section) => section.name),
+    ['claudecode:identity', 'claudecode:prompt'],
+  )
+})
+
+test('an invalid config is fail-soft: no throw, no listener, console.error says disabled', () => {
+  // A bad row must never throw out of the Cordis plugin loader and abort the boot.
+  const harness = createHarness({ sections: DSH_SECTIONS, autoApply: false })
+  const lines = captureConsole('error', () => {
+    assert.doesNotThrow(() => harness.applyWith({ variant: 'nope' }))
+  })
+
+  assert.equal(harness.listeners.length, 0, 'no system-prompt/assemble handler is registered')
+  assert.equal(lines.length, 2, `expected the disabled line plus one hint, got ${JSON.stringify(lines)}`)
+  assert.ok(lines[0].includes('disabled'), `first line must report the disable: ${lines[0]}`)
+  assert.ok(lines[0].includes('unknown variant'), `the underlying reason must survive: ${lines[0]}`)
+  assert.ok(lines[1].includes('will use its own prompt'), `second line must state the fallback: ${lines[1]}`)
+})
+
+test('a missing prompt file is fail-soft too', () => {
+  const harness = createHarness({ sections: DSH_SECTIONS, autoApply: false })
+  const lines = captureConsole('error', () => {
+    assert.doesNotThrow(() =>
+      harness.applyWith({ variant: 'cli', promptPath: '/definitely/missing.md' }),
+    )
+  })
+
+  assert.equal(harness.listeners.length, 0, 'no system-prompt/assemble handler is registered')
+  assert.ok(lines[0].includes('disabled') && lines[0].includes('cannot read prompt file'),
+    `the read failure must be reported: ${lines[0]}`)
 })
 
 test('promptPath loads an arbitrary prompt body', async () => {
