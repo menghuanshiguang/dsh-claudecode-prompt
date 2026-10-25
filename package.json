@@ -33,7 +33,7 @@
     "prompt-engineering"
   ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "test:transform": "node test/transform.test.mjs",
     "test:assemble": "node test/assemble.test.mjs",
     "capture": "python tools/capture_cc_prompt.py"
