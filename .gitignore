@@ -1,0 +1,22 @@
+# --- local scratch (raw capture evidence, never published) ---
+captures/
+.cc-cfg/
+vsix/
+*.vsix
+w1.txt
+offsets.json
+scan1.py
+dump.py
+acp-*.txt
+
+# --- node ---
+node_modules/
+pnpm-lock.yaml
+*.log
+
+# --- editors / os ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
